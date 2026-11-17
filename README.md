@@ -71,8 +71,8 @@ BOOSTER_ROBOT=6lbw0 DOCKER_HOST="unix://$HOME/.docker/run/docker.sock" \
 GitHub source snapshot:
 - Based on BoosterRobotics/sim-3v3-simple-framework; the original MIT license is retained.
 - Source, tests, framework documentation, training scripts, and a saved online checkpoint are included.
-- `training/checkpoints/latest-model.json` records update 182, continued locally on an Apple M5 Mac from update 169. Training was stopped by the user during the first match after 13 new online updates; no full match or frozen evaluation was completed. This checkpoint is not evidence of improved playing strength.
-- `src/models/rl_policy.py` exports the same update-182 weights with `training=False` for normal play (agent source version 1.8.2). The JSON checkpoint retains training metadata for resuming.
+- `training/checkpoints/latest-model.json` records Windows checkpoint 365, captured on 20261117-135022 (Asia/Shanghai). This continues the Windows training run; the earlier Mac checkpoint 182 remains in Git history. Update counts from these separate runs are not directly comparable.
+- `src/models/rl_policy.py` exports the same checkpoint weights with `training=False` for normal play. The JSON checkpoint retains training metadata for resuming. This snapshot is not a new evaluation result.
 - Build packages, virtual environments, raw rollouts, TensorBoard logs, local device settings, and the machine handoff note are excluded.
 - The RL runner supports macOS and Windows, configurable SDK/data paths and a local robot serial, and builds its recovery package locally. Other historical training scripts still contain installation-specific paths, IDs and references to older packages; adapt those before use.
 - `training/artifacts/` and historical `build/` results referenced above are local experiment outputs and are not bundled in this source snapshot.
