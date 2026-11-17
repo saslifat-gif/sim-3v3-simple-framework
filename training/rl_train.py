@@ -4,6 +4,7 @@ import collections
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,7 +17,7 @@ from tensorboard_metrics import Metrics
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'build/rl-training'
-CONTAINER='7gofn-k1'
+CONTAINER=os.environ.get('BOOSTER_ROBOT','7gofn')+'-k1'
 RUNNER='/tmp/booster_agent_deploy/football3v3_runner'
 INSTALL='/opt/booster/booster_agent_data/data/agents/extract/com.example.lqinternalmatch'
 AGENT='com.example.lqinternalmatch'
@@ -40,6 +41,7 @@ state=json.loads(REPORT.read_text()) if REPORT.exists() else dict(method='vanill
     requested_speed=args.training_speed,formation='three outfield players, no dedicated goalkeeper',episodes=[],complete=False)
 state['requested_speed']=args.training_speed
 builder=None
+restore_archive=None
 port=None
 metrics=Metrics(args.tensorboard_directory or OUT/'tensorboard',event_directory=OUT)
 for historical in state['episodes']:metrics.episode(historical)
@@ -83,10 +85,10 @@ def export(model,version):
                               for s in path.read_text(encoding='utf8').splitlines())+'\n',encoding='utf8')
 
 
-def build(model,version):
+def build(model,version,deploy=False):
     export(model,version)
     job=uuid.uuid4().hex
-    (IPC/'request.json').write_text(json.dumps(dict(id=job)))
+    (IPC/'request.json').write_text(json.dumps(dict(id=job,deploy=deploy)))
     deadline=time.monotonic()+600
     while not (IPC/f'{job}.json').exists():
         stop_check()
@@ -143,7 +145,8 @@ def read_rollout():
     script="""import pathlib,glob,json
 for p in pathlib.Path('/proc').glob('[0-9]*'):
  try:
-  if '/com_example_lqinternalmatch/pyagent_x86_64' not in (p/'cmdline').read_bytes().replace(b'\\0',b' ').decode(errors='ignore'):continue
+  cmd=(p/'cmdline').read_bytes().replace(b'\\0',b' ').decode(errors='ignore')
+  if not any('/com_example_lqinternalmatch/pyagent_'+arch in cmd for arch in ['x86_64','aarch64']):continue
   if b'SOCCER_TEAM_ID=1' not in (p/'environ').read_bytes().split(b'\\0'):continue
   paths=glob.glob(f'{p}/root/var/log/booster_agent/com.example.lqinternalmatch/agent_*.log')
   if paths:
@@ -248,7 +251,7 @@ def play(model,archive,version,speed):
 
 
 def main():
-    global builder
+    global builder,restore_archive
     if state.get('complete'):
         print('RL pilot already completed. Results: '+str(REPORT),flush=True)
         return
@@ -258,7 +261,7 @@ def main():
     state.pop('restore_error',None)
     with (OUT/'builder.log').open('a') as log:
         builder=subprocess.Popen(['node',str(ROOT/'training/native_builder.cjs'),'--ipc',str(IPC)],
-            cwd=ROOT,stdout=log,stderr=log,creationflags=subprocess.CREATE_NO_WINDOW)
+            cwd=ROOT,stdout=log,stderr=log,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         deadline=time.monotonic()+300
         while not (IPC/'ready.json').exists():
             stop_check()
@@ -279,6 +282,11 @@ def main():
             weights[0][0]=.25
             model=dict(format_version=1,enabled=True,training=True,weights=weights,
                        value_weights=[0.]*12,seed=314,updates=0)
+        # Build a frozen recovery package on this machine; GitHub snapshots do
+        # not contain the old Windows experiment's .agent archives.
+        baseline=dict(model,episode='baseline',training=False)
+        print('BUILDING baseline',flush=True)
+        restore_archive=build(baseline,f'{args.version_prefix}.0',deploy=True)
         completed={e['name'] for e in state['episodes'] if e.get('update')}
         for index in range(TRAINING_EPISODES):
             name=f'train-{index+1:02d}'
@@ -326,10 +334,10 @@ finally:
     if builder is not None:
         try:
             state['restored_speed']=set_speed(1)
-            if not state.get('complete'):
-                install(ROOT/'build/com.example.lqinternalmatch-1.4.5.agent')
+            if not state.get('complete') and restore_archive is not None:
+                install(restore_archive)
                 docker('python3',RUNNER+'/launcher.py','--publish-logs','--teams',AGENT,'com.booster.default3v3ai')
-                state['active_version']='1.4.5'
+                state['active_version']=f'{args.version_prefix}.0'
         except Exception as error:state['restore_error']=repr(error)
         (IPC/'stop').touch()
     save()

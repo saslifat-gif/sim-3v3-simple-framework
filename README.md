@@ -48,11 +48,31 @@ Reinforcement-learning pilot:
 - Production inference uses `training=False` and standard Python only. A successful training run does not by itself establish that the policy beats the baseline.
 - Completed pilot: v1.4.5 trained from 843 transitions in four valid matches, then won 5–2 against the default AI in a full 1x evaluation with no own penalties. The 10x target delivered about 3.36x game-clock throughput during training, excluding builds. Accelerated rollouts had extra `motionInSet` penalties; their wall-clock control timing differs from 1x play. This single evaluation does not establish consistent superiority. Evidence is in `training/artifacts/rl-pilot-summary.json`.
 
+Local macOS training:
+- Start Docker Desktop. The runner uses the installed `/Applications/Booster Studio.app` SDK and the local simulator; no remote machine or AI API is needed.
+- Create an isolated environment with `python3 -m venv .venv-training`, then install `tensorboard==2.21.0 py_trees==2.4.0` using `.venv-training/bin/python -m pip install`.
+- Set `BOOSTER_ROBOT` to the serial of your local virtual Booster K1 robot. On this Mac it is `6lbw0`. `BOOSTER_NATIVE_DIR` and `BOOSTER_DATA_DIR` optionally override the SDK and Studio data directories.
+- Run three training matches followed by one frozen evaluation:
+
+```sh
+BOOSTER_ROBOT=6lbw0 DOCKER_HOST="unix://$HOME/.docker/run/docker.sock" \
+  caffeinate -i .venv-training/bin/python -u training/rl_train.py \
+  --run-directory build/rl-mac \
+  --initial-model training/checkpoints/latest-model.json \
+  --additional-episodes 3 --training-speed 1 --version-prefix 1.9
+```
+
+- Checkpoints and results go to `build/rl-mac`. Repeating this command adds three training matches and one evaluation, resuming the latest saved weights. The runner builds its own frozen recovery package before training.
+- Stop with `touch build/rl-mac/stop-requested`; remove that file before resuming. A stopped run keeps its online checkpoints. The recovery package is the frozen policy from the beginning of that invocation.
+- Dashboard: `.venv-training/bin/python -m tensorboard.main --logdir build/rl-mac/tensorboard --host 127.0.0.1 --port 6006`.
+- Leave Booster Studio's simulator controls alone while training: the runner owns match resets, robot activation, deployment, and match starts.
+
 
 GitHub source snapshot:
 - Based on BoosterRobotics/sim-3v3-simple-framework; the original MIT license is retained.
 - Source, tests, framework documentation, training scripts, and a saved online checkpoint are included.
-- `training/checkpoints/latest-model.json` records update 169 at export. The source policy may reflect the start of the current match; the JSON checkpoint contains the more recent online weights.
+- `training/checkpoints/latest-model.json` records update 182, continued locally on an Apple M5 Mac from update 169. Training was stopped by the user during the first match after 13 new online updates; no full match or frozen evaluation was completed. This checkpoint is not evidence of improved playing strength.
+- `src/models/rl_policy.py` exports the same update-182 weights with `training=False` for normal play (agent source version 1.8.2). The JSON checkpoint retains training metadata for resuming.
 - Build packages, virtual environments, raw rollouts, TensorBoard logs, local device settings, and the machine handoff note are excluded.
-- Training scripts currently contain this installation's Booster Studio paths, robot/container IDs, and references to older built packages. Adapt those settings and build the required packages before running them on another machine.
+- The RL runner supports macOS and Windows, configurable SDK/data paths and a local robot serial, and builds its recovery package locally. Other historical training scripts still contain installation-specific paths, IDs and references to older packages; adapt those before use.
 - `training/artifacts/` and historical `build/` results referenced above are local experiment outputs and are not bundled in this source snapshot.

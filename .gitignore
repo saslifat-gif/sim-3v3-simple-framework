@@ -170,3 +170,6 @@ build/*
 build/benchmark/*
 !build/benchmark/reset_field.py
 !build/benchmark/run_comparison.py
+
+# Local MuJoCo diagnostics
+MUJOCO_LOG.TXT
